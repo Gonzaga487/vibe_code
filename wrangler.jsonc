@@ -12,7 +12,7 @@
   // Local frontend only. Override FRONTEND_ORIGINS with exact HTTPS origins in
   // the Cloudflare environment; wildcard origins are rejected by the Worker.
   "vars": {
-    "FRONTEND_ORIGINS": "http://localhost:5173"
+    "FRONTEND_ORIGINS": "http://localhost:5173,https://zenenergies-web.pages.dev"
   },
   "d1_databases": [
     {
