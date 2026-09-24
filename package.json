@@ -13,11 +13,18 @@
     "dev:web": "npm run dev --prefix client",
     "build": "npm run build --prefix client",
     "build:web": "npm run build --prefix client",
-    "test": "node --test --test-concurrency=1",
+    "test": "node --test --test-concurrency=1 server/tests/*.test.js",
     "test:web": "npm run test --prefix client --if-present",
     "check": "npm test && npm run build:web",
     "admin:bootstrap": "node server/cli/bootstrap-admin.js",
-    "restore:backup": "node server/cli/restore-backup.js"
+    "restore:backup": "node server/cli/restore-backup.js",
+    "worker:dev": "npm --prefix worker run dev",
+    "worker:deploy": "npm --prefix worker run deploy",
+    "worker:d1:create": "npm --prefix worker run d1:create",
+    "worker:migrate:local": "npm --prefix worker run migrate:local",
+    "worker:migrate:remote": "npm --prefix worker run migrate:remote",
+    "worker:check": "npm --prefix worker run check",
+    "worker:test:integration": "npm --prefix worker run test:integration"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

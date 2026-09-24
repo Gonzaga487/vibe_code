@@ -1,0 +1,29 @@
+{
+  "$schema": "worker/node_modules/wrangler/config-schema.json",
+  "name": "zenenergies-api",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
+  // Local frontend only. Override FRONTEND_ORIGINS with exact HTTPS origins in
+  // the Cloudflare environment; wildcard origins are rejected by the Worker.
+  "vars": {
+    "FRONTEND_ORIGINS": "http://localhost:5173"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "zenenergies-db",
+      // Created in Cloudflare account region WEUR.
+      "database_id": "474b786e-c761-4361-a46b-019c8ba2c51a",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

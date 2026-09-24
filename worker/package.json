@@ -1,0 +1,40 @@
+{
+  "name": "zenenergies-cloudflare-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "dev": "wrangler dev --config ../wrangler.jsonc",
+    "build": "wrangler deploy --dry-run --outdir dist --config ../wrangler.jsonc",
+    "deploy": "npm run build && wrangler deploy --config ../wrangler.jsonc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config vitest.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings --config ../wrangler.jsonc worker-configuration.d.ts",
+    "d1:create": "wrangler d1 create zenenergies-db --config ../wrangler.jsonc",
+    "secret:jwt": "wrangler secret put JWT_SECRET --config ../wrangler.jsonc",
+    "secret:admin-username": "wrangler secret put ADMIN_USERNAME --config ../wrangler.jsonc",
+    "secret:admin-password": "wrangler secret put ADMIN_PASSWORD --config ../wrangler.jsonc",
+    "secret:admin-name": "wrangler secret put ADMIN_FULL_NAME --config ../wrangler.jsonc",
+    "migrate:local": "wrangler d1 migrations apply DB --local --config ../wrangler.jsonc",
+    "migrate:remote": "wrangler d1 migrations apply DB --remote --config ../wrangler.jsonc"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "hono": "^4.13.9",
+    "jose": "^6.2.12",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.2.4",
+    "@cloudflare/workers-types": "^5.20260924.1",
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.137.0"
+  }
+}

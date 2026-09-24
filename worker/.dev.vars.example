@@ -1,0 +1,10 @@
+# Copy to worker/.dev.vars for local development. Never commit worker/.dev.vars.
+# Generate a strong JWT value locally, for example with: openssl rand -base64 48
+JWT_SECRET=
+
+# Optional one-time first administrator bootstrap. All three values are read
+# from secret bindings and are ignored after any user exists. Clear/remove them
+# after the first successful login and required password change.
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
+ADMIN_FULL_NAME=

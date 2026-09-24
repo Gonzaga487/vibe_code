@@ -63,6 +63,19 @@ Use a production custom domain and set that exact origin in the API's `FRONTEND_
 
 Use the root `netlify.toml`, which sets base directory `client`, runs `npm run build`, publishes `dist`, applies security headers, and supplies the SPA fallback. `client/public/_redirects` is also retained for hosts that copy the client build directly. Set the same `VITE_API_URL` environment variable.
 
+## Optional Cloudflare Worker + D1 API
+
+The repository also includes a stateless Cloudflare Worker backend in `worker/`. It preserves the existing `/api` response contracts and uses D1 instead of a persistent SQLite file. It does not modify or replace the Express backend.
+
+1. Install Worker dependencies with `npm install --prefix worker`.
+2. Run `npm run worker:d1:create` (Wrangler runs `wrangler d1 create zenenergies-db`) and replace the documented placeholder `database_id` in `wrangler.jsonc`.
+3. Set `JWT_SECRET` with `npm --prefix worker run secret:jwt`. Set optional one-time `ADMIN_USERNAME`, `ADMIN_PASSWORD`, and `ADMIN_FULL_NAME` with the corresponding `npm --prefix worker run secret:admin-*` scripts; remove them after the first administrator is created.
+4. Set an exact `FRONTEND_ORIGINS` allowlist in the Cloudflare Worker environment. Do not use wildcards.
+5. Apply the canonical D1 migration with `npm run worker:migrate:remote`.
+6. Deploy with `npm run worker:deploy`, then set the frontend `VITE_API_URL` to the Worker's public `/api` origin.
+
+The Worker has no operational seed rows. D1 migration/schema rows are metadata only. It uses `db.batch()` for atomic multi-statement writes and never emulates a synchronous local SQLite API. Review `worker/README.md` before using it: backup/restore is intentionally capped for D1 request limits, login limiting is D1-backed rather than an edge WAF, and Cloudflare plan limits may affect large backups or FIFO lot histories. Do not run the Node SQLite migration/bootstrap commands against a D1 binding.
+
 ## Backups and retention
 
 SQLite runs in WAL mode. Do not copy only the main `.sqlite` file while writes are active; use the authenticated **Backup & Restore** JSON snapshot, or stop the service before copying the database plus WAL files. Store backup files as sensitive because they include password hashes and complete operations. Test restores in a separate environment before relying on them.

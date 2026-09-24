@@ -1,6 +1,6 @@
 # ZENENERGIES Station
 
-A full-stack, role-secured fuel-station operations platform for **Petrol** and **Diesel**. The client is React/Vite/TypeScript/Tailwind; the API is Node.js/Express with SQLite persistence. All money is denominated in **Kenyan Shillings (KSh)**.
+A full-stack, role-secured fuel-station operations platform for **Petrol** and **Diesel**. The client is React/Vite/TypeScript/Tailwind; the default API is Node.js/Express with SQLite persistence. An optional Cloudflare Worker + D1 API is provided in `worker/` and preserves the same `/api` contracts. All money is denominated in **Kenyan Shillings (KSh)**.
 
 The operational database starts empty. There are no seeded fuel prices, stock records, sales, expenses, shifts, or demonstration users. Schema migrations run transactionally on startup; the current canonical station contract is schema version 2 and retains stronger internal cent-based/FIFO accounting alongside the requested public fields.
 
@@ -26,6 +26,8 @@ server/routes/          REST endpoint modules
 server/services/        Audit, settings, inventory, backup, bootstrap services
 server/tests/           Temporary-database integration tests
 server.js               Production API entrypoint (`node server.js`)
+worker/                 Optional Cloudflare Worker + D1 API
+wrangler.jsonc           Worker/D1 deployment configuration
 Dockerfile              Production backend image
 render.yaml             Render API + static-site Blueprint
 railway.json            Railway API configuration
@@ -71,7 +73,14 @@ npm run test:web          # frontend tests when configured
 npm run check             # backend tests + frontend production build
 npm run admin:bootstrap   # explicit first-admin command
 npm run restore:backup -- ./backup.json  # offline validated recovery
+npm run worker:dev                    # optional Cloudflare Worker + local D1
+npm run worker:migrate:local          # apply the Worker migration locally
+npm run worker:deploy                 # build and deploy the Worker
+npm run worker:check                  # Worker typecheck, unit tests, and dry-run build
+npm run worker:test:integration      # Worker + local Miniflare D1 integration tests
 ```
+
+See [`worker/README.md`](worker/README.md) for D1 creation, secret bindings, remote migration, deployment, and Worker-specific limits. The Node/Express backend remains available and is not replaced by the Worker.
 
 Backend tests create a temporary SQLite database and remove it afterward. They do not populate the real operational database.
 
