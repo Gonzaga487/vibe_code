@@ -1,0 +1,40 @@
+{
+  "name": "zenenergies-station",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production fuel-station operations platform for ZENENERGIES",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "dev:web": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "build:web": "npm run build --prefix client",
+    "test": "node --test --test-concurrency=1",
+    "test:web": "npm run test --prefix client --if-present",
+    "check": "npm test && npm run build:web",
+    "admin:bootstrap": "node server/cli/bootstrap-admin.js",
+    "restore:backup": "node server/cli/restore-backup.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^12.2.0",
+    "compression": "^1.8.1",
+    "cors": "^2.8.6",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "luxon": "^3.7.1",
+    "pino": "^9.9.0",
+    "pino-http": "^10.5.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.4"
+  }
+}
