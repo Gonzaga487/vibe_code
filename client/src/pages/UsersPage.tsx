@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Edit3, KeyRound, LogOut, Search, ShieldCheck, UserCheck, UserPlus, UserX } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -10,7 +10,7 @@ import { InlineAlert } from '@/components/ui/Feedback';
 import { useAuth } from '@/context/AuthContext';
 import { buildQuery, request } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
-import { useDebouncedValue, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDebouncedValue, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { firstError, passwordError, requiredText, usernameError } from '@/lib/validation';
 import type { Paginated, Role, User } from '@/types/api';
 
@@ -40,12 +40,23 @@ export default function UsersPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [submitting, submit] = useSubmitGuard();
   const [resetSubmitting, runReset] = useSubmitGuard();
+  const createButtonRef = useRef<HTMLButtonElement>(null);
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const fullNameRef = useRef<HTMLInputElement>(null);
+  const roleRef = useRef<HTMLSelectElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   const filters = { search: debouncedSearch.trim() || undefined, role: role || undefined, isActive: active || undefined, page, pageSize };
   const users = useQuery({ queryKey: ['users', filters], queryFn: () => request<Paginated<User>>(`/users${buildQuery(filters)}`), placeholderData: (previous) => previous });
+  useEffect(() => {
+    if (!formOpen) return;
+    const timer = window.setTimeout(() => focusField(editing ? fullNameRef : usernameRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [editing?.id, formOpen]);
+
   const save = useMutation({
     mutationFn: (body: Record<string, unknown>) => request<UserResponse>(editing ? `/users/${editing.id}` : '/users', { method: editing ? 'PATCH' : 'POST', body }),
-    onSuccess: () => { setFormOpen(false); toast.success(editing ? 'User updated.' : 'User created.'); void queryClient.invalidateQueries({ queryKey: ['users'] }); },
+    onSuccess: () => { setFormOpen(false); toast.success(editing ? 'User updated.' : 'User created.'); window.setTimeout(() => focusField(createButtonRef), 0); void queryClient.invalidateQueries({ queryKey: ['users'] }); },
   });
   const resetPassword = useMutation({
     mutationFn: () => request<UserResponse & { sessionsTerminated: boolean }>(`/users/${resetTarget?.id}/reset-password`, { method: 'POST', body: { newPassword } }),
@@ -90,7 +101,7 @@ export default function UsersPage() {
 
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Users" description="Admin-only account, role, activation, password reset, and session controls." actions={<Button onClick={openCreate} leftIcon={<UserPlus className="h-4 w-4" />}>Create user</Button>} />
+      <PageHeader title="Users" description="Admin-only account, role, activation, password reset, and session controls." actions={<Button ref={createButtonRef} onClick={openCreate} leftIcon={<UserPlus className="h-4 w-4" />}>Create user</Button>} />
       <div className="mb-6"><InlineAlert tone="info" title="Credential safety" icon={ShieldCheck}>The API returns safe user profiles only. Password hashes are never requested or displayed, and password fields are never persisted by this client.</InlineAlert></div>
 
       <SectionCard className="mb-6" title="Find users" description="Search and filters run on the server.">
@@ -110,10 +121,10 @@ export default function UsersPage() {
       <Modal open={formOpen} onClose={() => !submitting && setFormOpen(false)} title={editing ? `Edit ${editing.fullName}` : 'Create station user'} description={editing ? 'Role or status changes terminate old sessions on the server.' : 'The new user signs in using the selected role.'} footer={<><Button variant="secondary" disabled={submitting} onClick={() => setFormOpen(false)}>Cancel</Button><Button disabled={submitting} loading={submitting} onClick={() => document.getElementById('user-form-submit')?.click()}>{editing ? 'Save user' : 'Create user'}</Button></>}>
         <form id="user-form" onSubmit={onSubmit} noValidate className="space-y-4"><button id="user-form-submit" type="submit" className="hidden" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="user-form-username" label="Username" required hint={editing ? 'Usernames cannot be changed' : '3–32 letters, numbers, dots, underscores, or hyphens'}><Input id="user-form-username" value={form.username} onChange={(event) => setForm((value) => ({ ...value, username: event.target.value }))} disabled={Boolean(editing)} maxLength={32} autoComplete="off" /></Field>
-            <Field id="user-form-fullname" label="Full name" required><Input id="user-form-fullname" value={form.fullName} onChange={(event) => setForm((value) => ({ ...value, fullName: event.target.value }))} maxLength={100} autoComplete="name" /></Field>
-            <Field id="user-form-role" label="Role" required><Select id="user-form-role" value={form.role} options={[{ value: 'admin', label: 'Administrator' }, { value: 'attendant', label: 'Attendant' }]} onChange={(event) => setForm((value) => ({ ...value, role: event.target.value as Role }))} /></Field>
-            {!editing && <Field id="user-form-password" label="Initial password" required hint="At least 12 characters with upper/lower case, number, and symbol"><Input id="user-form-password" type="password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} maxLength={128} autoComplete="new-password" /></Field>}
+            <Field id="user-form-username" label="Username" required hint={editing ? 'Usernames cannot be changed' : '3–32 letters, numbers, dots, underscores, or hyphens'}><Input ref={usernameRef} id="user-form-username" value={form.username} onChange={(event) => setForm((value) => ({ ...value, username: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, fullNameRef)} enterKeyHint="next" disabled={Boolean(editing)} maxLength={32} autoComplete="off" /></Field>
+            <Field id="user-form-fullname" label="Full name" required><Input ref={fullNameRef} id="user-form-fullname" value={form.fullName} onChange={(event) => setForm((value) => ({ ...value, fullName: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, roleRef)} enterKeyHint="next" maxLength={100} autoComplete="name" /></Field>
+            <Field id="user-form-role" label="Role" required><Select ref={roleRef} id="user-form-role" value={form.role} options={[{ value: 'admin', label: 'Administrator' }, { value: 'attendant', label: 'Attendant' }]} onChange={(event) => setForm((value) => ({ ...value, role: event.target.value as Role }))} onKeyDown={(event) => handleEnterToNext(event, editing ? undefined : passwordRef, () => event.currentTarget.form?.requestSubmit())} enterKeyHint={editing ? 'done' : 'next'} /></Field>
+            {!editing && <Field id="user-form-password" label="Initial password" required hint="At least 12 characters with upper/lower case, number, and symbol"><Input ref={passwordRef} id="user-form-password" type="password" value={form.password} onChange={(event) => setForm((value) => ({ ...value, password: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" maxLength={128} autoComplete="new-password" /></Field>}
           </div>
           <Checkbox id="user-must-change" label="Require password change" description="The account receives a must-change flag; the server remains the authority." checked={form.mustChangePassword} onChange={(event) => setForm((value) => ({ ...value, mustChangePassword: event.target.checked }))} />
           {editing?.id === currentUser?.id && <InlineAlert tone="warning">The backend prevents you from removing your own administrator role or deactivating your own account.</InlineAlert>}

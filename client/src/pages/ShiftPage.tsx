@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banknote, CheckCircle2, Clock3, LockKeyhole, Scale, Smartphone, WalletCards } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -10,7 +10,7 @@ import { ErrorState, InlineAlert, PageLoader } from '@/components/ui/Feedback';
 import { useSettings } from '@/context/SettingsContext';
 import { buildQuery, request } from '@/lib/api';
 import { formatDateKey, formatDateTime, formatKsh, formatLitres, formatNumber, formatTime } from '@/lib/format';
-import { useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { firstError, nonNegativeNumber } from '@/lib/validation';
 import type { Paginated, Shift } from '@/types/api';
 
@@ -45,6 +45,10 @@ export default function ShiftPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [openingSubmitting, openSubmit] = useSubmitGuard();
   const [closingSubmitting, closeSubmit] = useSubmitGuard();
+  const openingCashRef = useRef<HTMLInputElement>(null);
+  const openingMpesaRef = useRef<HTMLInputElement>(null);
+  const countedCashRef = useRef<HTMLInputElement>(null);
+  const countedMpesaRef = useRef<HTMLInputElement>(null);
 
   const openQuery = useQuery({
     queryKey: ['shift', 'open'],
@@ -76,6 +80,12 @@ export default function ShiftPage() {
     },
   });
 
+  useEffect(() => {
+    if (openQuery.isLoading) return;
+    const timer = window.setTimeout(() => focusField(shift ? countedCashRef : openingCashRef, true), 100);
+    return () => window.clearTimeout(timer);
+  }, [openQuery.isLoading, shift?.id]);
+
   if (openQuery.isLoading) return <PageLoader label="Loading your shift position…" />;
   if (openQuery.error) return <ErrorState message={openQuery.error instanceof Error ? openQuery.error.message : 'Your shift could not be loaded.'} onRetry={() => void openQuery.refetch()} />;
 
@@ -87,6 +97,17 @@ export default function ShiftPage() {
     void openSubmit(async () => {
       try { await openShift.mutateAsync(); } catch (error) { const message = error instanceof Error ? error.message : 'The shift could not be opened.'; setFormError(message); toast.error(message); }
     });
+  };
+
+  const requestClose = () => {
+    const error = firstError(nonNegativeNumber(countedCash, 'Counted cash'), nonNegativeNumber(countedMpesa, 'Counted M-Pesa'));
+    if (error) {
+      setFormError(error);
+      focusField(countedCashRef, true);
+      return;
+    }
+    setFormError(null);
+    setCloseOpen(true);
   };
 
   const cashDifference = (Number(countedCash) || 0) - (shift?.expected.cashKsh || 0);
@@ -114,8 +135,8 @@ export default function ShiftPage() {
         <div className="grid items-start gap-6 xl:grid-cols-[0.8fr_1.2fr]">
           <SectionCard title="Open a new shift" description="Record the cash and M-Pesa float before your first transaction.">
             <form onSubmit={openShiftSubmit} noValidate className="space-y-4">
-              <Field id="opening-cash" label="Opening cash float" required><KshInput id="opening-cash" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} /></Field>
-              <Field id="opening-mpesa" label="Opening M-Pesa float" required><KshInput id="opening-mpesa" value={openingMpesa} onChange={(event) => setOpeningMpesa(event.target.value)} /></Field>
+              <Field id="opening-cash" label="Opening cash float" required><KshInput ref={openingCashRef} id="opening-cash" value={openingCash} onChange={(event) => setOpeningCash(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, openingMpesaRef)} enterKeyHint="next" /></Field>
+              <Field id="opening-mpesa" label="Opening M-Pesa float" required><KshInput ref={openingMpesaRef} id="opening-mpesa" value={openingMpesa} onChange={(event) => setOpeningMpesa(event.target.value)} enterKeyHint="done" /></Field>
               {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
               <Button type="submit" size="lg" className="w-full" loading={openingSubmitting} leftIcon={<Clock3 className="h-4 w-4" />}>Open shift</Button>
             </form>
@@ -145,8 +166,8 @@ export default function ShiftPage() {
           <div className="mt-6 grid items-start gap-6 xl:grid-cols-[1fr_0.8fr]">
             <SectionCard title="Count and close" description="Enter both physical counted values. The comparison uses live server totals at the moment you close.">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field id="counted-cash" label="Counted cash" required hint={`Expected ${formatKsh(shift.expected.cashKsh)}`}><KshInput id="counted-cash" value={countedCash} onChange={(event) => setCountedCash(event.target.value)} /></Field>
-                <Field id="counted-mpesa" label="Counted M-Pesa" required hint={`Expected ${formatKsh(shift.expected.mpesaKsh)}`}><KshInput id="counted-mpesa" value={countedMpesa} onChange={(event) => setCountedMpesa(event.target.value)} /></Field>
+                <Field id="counted-cash" label="Counted cash" required hint={`Expected ${formatKsh(shift.expected.cashKsh)}`}><KshInput ref={countedCashRef} id="counted-cash" value={countedCash} onChange={(event) => setCountedCash(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, countedMpesaRef)} enterKeyHint="next" /></Field>
+                <Field id="counted-mpesa" label="Counted M-Pesa" required hint={`Expected ${formatKsh(shift.expected.mpesaKsh)}`}><KshInput ref={countedMpesaRef} id="counted-mpesa" value={countedMpesa} onChange={(event) => setCountedMpesa(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, undefined, requestClose)} enterKeyHint="done" /></Field>
               </div>
               {countedCash || countedMpesa ? (
                 <div className="mt-5 space-y-2">
@@ -155,7 +176,7 @@ export default function ShiftPage() {
                 </div>
               ) : <div className="mt-5"><InlineAlert>Enter the physical cash and M-Pesa counts to see the balance status.</InlineAlert></div>}
               {banner && <div className={`mt-4 rounded-2xl border-2 p-5 text-center ${banner.className}`}><p className="text-xs font-black uppercase tracking-[0.18em]">Overall shift: {banner.label}</p><p className="mt-1 text-3xl font-black tabular-nums">{formatKsh(totalDifference)}</p></div>}
-              <Button className="mt-5 w-full" size="lg" variant="warning" disabled={!countedCash || !countedMpesa} onClick={() => setCloseOpen(true)} leftIcon={<LockKeyhole className="h-4 w-4" />}>Close and reconcile shift</Button>
+              <Button className="mt-5 w-full" size="lg" variant="warning" disabled={!countedCash || !countedMpesa} onClick={requestClose} leftIcon={<LockKeyhole className="h-4 w-4" />}>Close and reconcile shift</Button>
             </SectionCard>
 
             <SectionCard title="Live shift activity" description="Values are read directly from the server.">

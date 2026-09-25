@@ -30,10 +30,11 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   invalid?: boolean;
   prefix?: string;
   suffix?: string;
+  selectOnFocus?: boolean;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { className = '', invalid, prefix, suffix, ...props },
+  { className = '', invalid, prefix, suffix, selectOnFocus = false, onFocus, ...props },
   ref,
 ) {
   const input = (
@@ -42,6 +43,18 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       aria-invalid={invalid || undefined}
       className={`${fieldClass} ${invalid ? 'border-red-500 focus:border-red-600 focus:ring-red-500/20' : ''} ${prefix ? 'rounded-l-none' : ''} ${suffix ? 'rounded-r-none' : ''} ${className}`}
       {...props}
+      onFocus={(event) => {
+        onFocus?.(event);
+        if (!selectOnFocus) return;
+        const field = event.currentTarget;
+        window.requestAnimationFrame(() => {
+          if (document.activeElement !== field) return;
+          field.select();
+          if (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
+            field.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+          }
+        });
+      }}
     />
   );
   if (!prefix && !suffix) return input;
@@ -114,9 +127,12 @@ export function Checkbox({ label, description, id, className = '', ...props }: C
   );
 }
 
-export function KshInput(props: InputProps) {
-  return <Input type="number" min="0" step="0.01" inputMode="decimal" prefix="KSh" {...props} />;
-}
+export const KshInput = forwardRef<HTMLInputElement, InputProps>(function KshInput(
+  { selectOnFocus = true, autoComplete = 'off', ...props },
+  ref,
+) {
+  return <Input ref={ref} type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" prefix="KSh" selectOnFocus={selectOnFocus} autoComplete={autoComplete} {...props} />;
+});
 
 interface DateRangeProps {
   from: string;

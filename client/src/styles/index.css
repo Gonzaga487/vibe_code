@@ -10,6 +10,7 @@
   html {
     @apply bg-slate-50 antialiased dark:bg-slate-950;
     text-rendering: optimizeLegibility;
+    scroll-padding-bottom: 8rem;
   }
 
   body {
@@ -31,6 +32,12 @@
 
   :focus-visible {
     scroll-margin: 6rem;
+  }
+
+  input,
+  select,
+  textarea {
+    scroll-margin-bottom: 8rem;
   }
 }
 

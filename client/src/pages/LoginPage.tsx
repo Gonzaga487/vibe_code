@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff, Fuel, LockKeyhole, ShieldCheck, UserRound } from 'lucide-react';
@@ -7,7 +7,7 @@ import { Field, Input } from '@/components/ui/Form';
 import { InlineAlert, PageLoader } from '@/components/ui/Feedback';
 import { useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/context/SettingsContext';
-import { useSubmitGuard } from '@/lib/hooks';
+import { handleEnterToNext, useSubmitGuard } from '@/lib/hooks';
 import { firstError, requiredText } from '@/lib/validation';
 import type { Role } from '@/types/api';
 
@@ -22,6 +22,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ username?: string | null; password?: string | null; form?: string | null }>({});
   const [submitting, submit] = useSubmitGuard();
+  const usernameRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user?.mustChangePassword) navigate('/settings', { replace: true });
@@ -106,11 +108,11 @@ export default function LoginPage() {
                 </fieldset>
 
                 <Field id="login-username" label="Username" required error={errors.username}>
-                  <Input id="login-username" value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" maxLength={32} placeholder="Enter your username" invalid={Boolean(errors.username)} autoFocus />
+                  <Input ref={usernameRef} id="login-username" value={username} onChange={(event) => setUsername(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, passwordRef)} enterKeyHint="next" autoComplete="username" maxLength={32} placeholder="Enter your username" invalid={Boolean(errors.username)} autoFocus />
                 </Field>
                 <Field id="login-password" label="Password" required error={errors.password}>
                   <div className="relative">
-                    <Input id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" maxLength={128} placeholder="Enter your password" invalid={Boolean(errors.password)} className="pr-11" />
+                    <Input ref={passwordRef} id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} enterKeyHint="go" autoComplete="current-password" maxLength={128} placeholder="Enter your password" invalid={Boolean(errors.password)} className="pr-11" />
                     <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center rounded-r-xl text-slate-500 hover:text-slate-800 focus:outline-none focus-visible:ring-2 focus-inset focus-visible:ring-brand-500 dark:hover:text-white" aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
                   </div>
                 </Field>

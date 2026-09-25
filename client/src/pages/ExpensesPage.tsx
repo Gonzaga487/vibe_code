@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Edit3, LockKeyhole, Plus, Search, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/context/SettingsContext';
 import { buildQuery, request } from '@/lib/api';
 import { addDays, formatDateKey, formatKsh, formatTime, toDateKey, todayKey } from '@/lib/format';
-import { useDebouncedValue, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDebouncedValue, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { firstError, isoDate, positiveNumber, requiredText } from '@/lib/validation';
 import type { Expense, ExpenseCategory, ExpensePayload, Paginated, Shift } from '@/types/api';
 
@@ -51,6 +51,13 @@ export default function ExpensesPage() {
   const [form, setForm] = useState<ExpenseForm>(blankForm());
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, submit] = useSubmitGuard();
+  const recordButtonRef = useRef<HTMLButtonElement>(null);
+  const categoryRef = useRef<HTMLSelectElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLInputElement>(null);
+  const amountRef = useRef<HTMLInputElement>(null);
+  const paymentRef = useRef<HTMLSelectElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   const openShift = useQuery({ queryKey: ['shift', 'open'], queryFn: () => request<ShiftResponse>('/shifts/open'), staleTime: 15_000 });
   const query = { from: from || undefined, to: to || undefined, category: category || undefined, page, pageSize };
@@ -64,11 +71,17 @@ export default function ExpensesPage() {
     return (expenses.data?.data || []).filter((expense) => `${expense.description} ${expense.notes || ''} ${expense.user.fullName}`.toLowerCase().includes(term));
   }, [debouncedSearch, expenses.data?.data]);
 
+  useEffect(() => {
+    if (!formOpen) return;
+    const timer = window.setTimeout(() => focusField(categoryRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [editing?.id, formOpen]);
+
   const openCreate = () => { setEditing(null); setForm(blankForm(openedDate && openedDate <= todayKey() ? openedDate : todayKey())); setFormError(null); setFormOpen(true); };
   const openEdit = (expense: Expense) => { setEditing(expense); setForm({ category: expense.category, description: expense.description, amountKsh: String(expense.amountKsh), paymentMethod: expense.paymentMethod, expenseDate: expense.expenseDate, notes: expense.notes || '' }); setFormError(null); setFormOpen(true); };
   const save = useMutation({
     mutationFn: (payload: ExpensePayload) => request<ExpenseResponse>(editing ? `/expenses/${editing.id}` : '/expenses', { method: editing ? 'PATCH' : 'POST', body: payload }),
-    onSuccess: () => { setFormOpen(false); toast.success(editing ? 'Expense updated.' : 'Expense recorded.'); void Promise.all([queryClient.invalidateQueries({ queryKey: ['expenses'] }), queryClient.invalidateQueries({ queryKey: ['shift', 'open'] }), queryClient.invalidateQueries({ queryKey: ['dashboard'] })]); },
+    onSuccess: () => { setFormOpen(false); toast.success(editing ? 'Expense updated.' : 'Expense recorded.'); window.setTimeout(() => focusField(recordButtonRef), 0); void Promise.all([queryClient.invalidateQueries({ queryKey: ['expenses'] }), queryClient.invalidateQueries({ queryKey: ['shift', 'open'] }), queryClient.invalidateQueries({ queryKey: ['dashboard'] })]); },
   });
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -95,7 +108,7 @@ export default function ExpensesPage() {
 
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Expenses" description={isAdmin ? 'All station expenses, with owner identity and payment details.' : 'Your expenses, linked to your open shift.'} actions={<Button onClick={openCreate} disabled={!isAdmin && !currentShift} leftIcon={<Plus className="h-4 w-4" />}>Record expense</Button>} />
+      <PageHeader title="Expenses" description={isAdmin ? 'All station expenses, with owner identity and payment details.' : 'Your expenses, linked to your open shift.'} actions={<Button ref={recordButtonRef} onClick={openCreate} disabled={!isAdmin && !currentShift} leftIcon={<Plus className="h-4 w-4" />}>Record expense</Button>} />
 
       {!isAdmin && !currentShift && <div className="mb-6"><InlineAlert tone="warning" title="No open shift"><span>Attendant expenses must be linked to an open shift. <Link className="font-bold underline" to="/shift">Open your shift</Link> to record an expense.</span></InlineAlert></div>}
 
@@ -117,12 +130,12 @@ export default function ExpensesPage() {
         <form id="expense-form" onSubmit={onSubmit} noValidate className="space-y-4"><button id="expense-form-submit" type="submit" className="hidden" />
           {!isAdmin && !currentShift && <EmptyState title="Open shift required" message="An open shift is required before an attendant can record an expense." icon={LockKeyhole} />}
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="expense-form-category" label="Category" required><Select id="expense-form-category" value={form.category} options={categories} onChange={(event) => setForm((value) => ({ ...value, category: event.target.value as ExpenseCategory }))} /></Field>
-            <Field id="expense-form-date" label="Expense date" required><Input id="expense-form-date" type="date" value={form.expenseDate} min={isAdmin ? undefined : openedDate} max={todayKey()} onChange={(event) => setForm((value) => ({ ...value, expenseDate: event.target.value }))} /></Field>
-            <Field id="expense-form-description" label="Description" required className="sm:col-span-2"><Input id="expense-form-description" value={form.description} onChange={(event) => setForm((value) => ({ ...value, description: event.target.value }))} maxLength={500} placeholder="What was purchased or paid?" /></Field>
-            <Field id="expense-form-amount" label="Amount" required><KshInput id="expense-form-amount" value={form.amountKsh} onChange={(event) => setForm((value) => ({ ...value, amountKsh: event.target.value }))} /></Field>
-            <Field id="expense-form-payment" label="Payment method" required><Select id="expense-form-payment" value={form.paymentMethod} options={[{ value: 'cash', label: 'Cash' }, { value: 'mpesa', label: 'M-Pesa' }]} onChange={(event) => setForm((value) => ({ ...value, paymentMethod: event.target.value as 'cash' | 'mpesa' }))} /></Field>
-            <Field id="expense-form-notes" label="Notes" className="sm:col-span-2"><Textarea id="expense-form-notes" value={form.notes} onChange={(event) => setForm((value) => ({ ...value, notes: event.target.value }))} maxLength={1000} /></Field>
+            <Field id="expense-form-category" label="Category" required><Select ref={categoryRef} id="expense-form-category" value={form.category} onKeyDown={(event) => handleEnterToNext(event, dateRef)} enterKeyHint="next" options={categories} onChange={(event) => setForm((value) => ({ ...value, category: event.target.value as ExpenseCategory }))} /></Field>
+            <Field id="expense-form-date" label="Expense date" required><Input ref={dateRef} id="expense-form-date" type="date" value={form.expenseDate} min={isAdmin ? undefined : openedDate} max={todayKey()} onChange={(event) => setForm((value) => ({ ...value, expenseDate: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, descriptionRef)} enterKeyHint="next" /></Field>
+            <Field id="expense-form-description" label="Description" required className="sm:col-span-2"><Input ref={descriptionRef} id="expense-form-description" value={form.description} onChange={(event) => setForm((value) => ({ ...value, description: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, amountRef)} enterKeyHint="next" maxLength={500} placeholder="What was purchased or paid?" /></Field>
+            <Field id="expense-form-amount" label="Amount" required><KshInput ref={amountRef} id="expense-form-amount" value={form.amountKsh} onChange={(event) => setForm((value) => ({ ...value, amountKsh: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, paymentRef)} enterKeyHint="next" /></Field>
+            <Field id="expense-form-payment" label="Payment method" required><Select ref={paymentRef} id="expense-form-payment" value={form.paymentMethod} onKeyDown={(event) => handleEnterToNext(event, notesRef)} enterKeyHint="next" options={[{ value: 'cash', label: 'Cash' }, { value: 'mpesa', label: 'M-Pesa' }]} onChange={(event) => setForm((value) => ({ ...value, paymentMethod: event.target.value as 'cash' | 'mpesa' }))} /></Field>
+            <Field id="expense-form-notes" label="Notes" className="sm:col-span-2"><Textarea ref={notesRef} id="expense-form-notes" value={form.notes} onChange={(event) => setForm((value) => ({ ...value, notes: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" maxLength={1000} /></Field>
           </div>
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
         </form>

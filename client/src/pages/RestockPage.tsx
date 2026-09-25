@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Edit3, Fuel as FuelIcon, PackageCheck, Plus, Scale, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -11,7 +11,7 @@ import { EmptyState, ErrorState, InlineAlert, StatCardSkeleton } from '@/compone
 import { useSettings } from '@/context/SettingsContext';
 import { buildQuery, request } from '@/lib/api';
 import { addDays, formatDateTime, formatKsh, formatLitres, formatNumber, toDateKey } from '@/lib/format';
-import { useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { stationApi } from '@/lib/stationApi';
 import { firstError, nonNegativeNumber, nonZeroNumber, positiveNumber, requiredText } from '@/lib/validation';
 import type { Paginated, Restock, RestockPayload, Settings, StockAdjustment } from '@/types/api';
@@ -60,6 +60,19 @@ export default function RestockPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [deliverySubmitting, submitDelivery] = useSubmitGuard();
   const [adjustmentSubmitting, submitAdjustment] = useSubmitGuard();
+  const deliveryButtonRef = useRef<HTMLButtonElement>(null);
+  const adjustmentButtonRef = useRef<HTMLButtonElement>(null);
+  const deliveryFuelRef = useRef<HTMLSelectElement>(null);
+  const deliveryQuantityRef = useRef<HTMLInputElement>(null);
+  const deliveryCostRef = useRef<HTMLInputElement>(null);
+  const deliverySupplierRef = useRef<HTMLInputElement>(null);
+  const deliveryReferenceRef = useRef<HTMLInputElement>(null);
+  const deliveryNotesRef = useRef<HTMLInputElement>(null);
+  const adjustmentFuelRef = useRef<HTMLSelectElement>(null);
+  const adjustmentQuantityRef = useRef<HTMLInputElement>(null);
+  const adjustmentCostRef = useRef<HTMLInputElement>(null);
+  const adjustmentReasonRef = useRef<HTMLInputElement>(null);
+  const adjustmentNotesRef = useRef<HTMLTextAreaElement>(null);
 
   const fuels = useQuery({ queryKey: ['fuel'], queryFn: () => stationApi.fuels.list(), staleTime: 30_000 });
   const settingsQuery = useQuery({ queryKey: ['settings', 'admin'], queryFn: () => request<{ settings: Settings }>('/settings') });
@@ -92,13 +105,25 @@ export default function RestockPage() {
     queryClient.invalidateQueries({ queryKey: ['settings', 'admin'] }),
   ]);
 
+  useEffect(() => {
+    if (!deliveryOpen) return;
+    const timer = window.setTimeout(() => focusField(deliveryFuelRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [deliveryOpen]);
+
+  useEffect(() => {
+    if (!adjustmentOpen) return;
+    const timer = window.setTimeout(() => focusField(adjustmentFuelRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [adjustmentOpen]);
+
   const saveDelivery = useMutation({
     mutationFn: (payload: RestockPayload) => request<RestockResponse>(editing ? `/restock/${editing.id}` : '/restock', { method: editing ? 'PATCH' : 'POST', body: payload }),
-    onSuccess: () => { setDeliveryOpen(false); toast.success(editing ? 'Restock updated.' : 'Fuel delivery recorded.'); void invalidateInventory(); },
+    onSuccess: () => { setDeliveryOpen(false); toast.success(editing ? 'Restock updated.' : 'Fuel delivery recorded.'); window.setTimeout(() => focusField(deliveryButtonRef), 0); void invalidateInventory(); },
   });
   const saveAdjustment = useMutation({
     mutationFn: (payload: { fuelId: number; quantityLitres: number; reason: string; notes?: string; unitCostKsh?: number }) => request<AdjustmentResponse>('/stock-adjustments', { method: 'POST', body: payload }),
-    onSuccess: () => { setAdjustmentOpen(false); toast.success('Stock adjustment recorded.'); void invalidateInventory(); },
+    onSuccess: () => { setAdjustmentOpen(false); toast.success('Stock adjustment recorded.'); window.setTimeout(() => focusField(adjustmentButtonRef), 0); void invalidateInventory(); },
   });
 
   const openDelivery = () => { setEditing(null); setDelivery(emptyDelivery(activeFuels[0] ? String(activeFuels[0].id) : '')); setFormError(null); setDeliveryOpen(true); };
@@ -153,7 +178,7 @@ export default function RestockPage() {
 
   return (
     <div className="animate-fade-in">
-      <PageHeader title="Restock" description="Admin-only inventory receiving, stock adjustments, and movement history." actions={<><Button variant="secondary" onClick={openAdjustment} disabled={!activeFuels.length} leftIcon={<Scale className="h-4 w-4" />}>Adjust stock</Button><Button onClick={openDelivery} disabled={!activeFuels.length} leftIcon={<Plus className="h-4 w-4" />}>Record delivery</Button></>} />
+      <PageHeader title="Restock" description="Admin-only inventory receiving, stock adjustments, and movement history." actions={<><Button ref={adjustmentButtonRef} variant="secondary" onClick={openAdjustment} disabled={!activeFuels.length} leftIcon={<Scale className="h-4 w-4" />}>Adjust stock</Button><Button ref={deliveryButtonRef} onClick={openDelivery} disabled={!activeFuels.length} leftIcon={<Plus className="h-4 w-4" />}>Record delivery</Button></>} />
 
       {!fuelList.length ? <SectionCard><EmptyState title="Configure fuel before receiving stock" message="No fuel definitions exist. Start with Diesel or Petrol, set a selling price, and optionally configure tank capacity." icon={FuelIcon} action={<Link to="/fuel"><Button>Configure fuel</Button></Link>} /></SectionCard> : <>
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -185,13 +210,13 @@ export default function RestockPage() {
       <Modal open={deliveryOpen} onClose={() => !deliverySubmitting && setDeliveryOpen(false)} title={editing ? 'Edit restock delivery' : 'Record fuel delivery'} description="Restock creates a FIFO cost lot and updates current stock transactionally." footer={<><Button variant="secondary" onClick={() => setDeliveryOpen(false)} disabled={deliverySubmitting}>Cancel</Button><Button onClick={() => document.getElementById('delivery-submit')?.click()} loading={deliverySubmitting}>{editing ? 'Save changes' : 'Record delivery'}</Button></>}>
         <form id="delivery-form" onSubmit={submitDeliveryForm} noValidate className="space-y-4"><button id="delivery-submit" type="submit" className="hidden" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="delivery-fuel" label="Fuel type" required><Select id="delivery-fuel" value={delivery.fuelId} options={activeFuels.map((fuel) => ({ value: String(fuel.id), label: `${fuel.fuelType} · ${formatLitres(fuel.quantityLitres)} in stock` }))} onChange={(event) => setDelivery((value) => ({ ...value, fuelId: event.target.value }))} /></Field>
-            <Field id="delivery-quantity" label="Quantity received" required><Input id="delivery-quantity" type="number" min="0.001" max="1000000" step="0.001" value={delivery.quantityLitres} onChange={(event) => setDelivery((value) => ({ ...value, quantityLitres: event.target.value }))} /></Field>
-            <Field id="delivery-cost" label="Cost per litre" required><KshInput id="delivery-cost" value={delivery.unitCostKsh} onChange={(event) => setDelivery((value) => ({ ...value, unitCostKsh: event.target.value }))} /></Field>
+            <Field id="delivery-fuel" label="Fuel type" required><Select ref={deliveryFuelRef} id="delivery-fuel" value={delivery.fuelId} options={activeFuels.map((fuel) => ({ value: String(fuel.id), label: `${fuel.fuelType} · ${formatLitres(fuel.quantityLitres)} in stock` }))} onChange={(event) => setDelivery((value) => ({ ...value, fuelId: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, deliveryQuantityRef)} enterKeyHint="next" /></Field>
+            <Field id="delivery-quantity" label="Quantity received" required><Input ref={deliveryQuantityRef} id="delivery-quantity" type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" selectOnFocus value={delivery.quantityLitres} onChange={(event) => setDelivery((value) => ({ ...value, quantityLitres: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, deliveryCostRef)} enterKeyHint="next" /></Field>
+            <Field id="delivery-cost" label="Cost per litre" required><KshInput ref={deliveryCostRef} id="delivery-cost" value={delivery.unitCostKsh} onChange={(event) => setDelivery((value) => ({ ...value, unitCostKsh: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, deliverySupplierRef)} enterKeyHint="next" /></Field>
             <Field id="delivery-total" label="Calculated total"><div className="flex min-h-[42px] items-center rounded-xl bg-slate-100 px-3.5 font-black text-slate-800 dark:bg-slate-800 dark:text-white">{Number.isFinite(deliveryTotal) && deliveryTotal > 0 ? formatKsh(deliveryTotal) : 'KSh 0.00'}</div></Field>
-            <Field id="delivery-supplier" label="Supplier" required className="sm:col-span-2"><Input id="delivery-supplier" value={delivery.supplier} onChange={(event) => setDelivery((value) => ({ ...value, supplier: event.target.value }))} maxLength={120} /></Field>
-            <Field id="delivery-reference" label="Delivery reference"><Input id="delivery-reference" value={delivery.reference} onChange={(event) => setDelivery((value) => ({ ...value, reference: event.target.value }))} maxLength={100} /></Field>
-            <Field id="delivery-notes" label="Notes"><Input id="delivery-notes" value={delivery.notes} onChange={(event) => setDelivery((value) => ({ ...value, notes: event.target.value }))} maxLength={1000} /></Field>
+            <Field id="delivery-supplier" label="Supplier" required className="sm:col-span-2"><Input ref={deliverySupplierRef} id="delivery-supplier" value={delivery.supplier} onChange={(event) => setDelivery((value) => ({ ...value, supplier: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, deliveryReferenceRef)} enterKeyHint="next" maxLength={120} /></Field>
+            <Field id="delivery-reference" label="Delivery reference"><Input ref={deliveryReferenceRef} id="delivery-reference" value={delivery.reference} onChange={(event) => setDelivery((value) => ({ ...value, reference: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, deliveryNotesRef)} enterKeyHint="next" maxLength={100} /></Field>
+            <Field id="delivery-notes" label="Notes"><Input ref={deliveryNotesRef} id="delivery-notes" value={delivery.notes} onChange={(event) => setDelivery((value) => ({ ...value, notes: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" maxLength={1000} /></Field>
           </div>
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
         </form>
@@ -200,11 +225,11 @@ export default function RestockPage() {
       <Modal open={adjustmentOpen} onClose={() => !adjustmentSubmitting && setAdjustmentOpen(false)} title="Adjust stock" description="Use a signed litre value and a clear reason. Adjustments are permanent and audited." footer={<><Button variant="secondary" onClick={() => setAdjustmentOpen(false)} disabled={adjustmentSubmitting}>Cancel</Button><Button onClick={() => document.getElementById('adjustment-submit')?.click()} loading={adjustmentSubmitting}>Record adjustment</Button></>}>
         <form id="adjustment-form" onSubmit={submitAdjustmentForm} noValidate className="space-y-4"><button id="adjustment-submit" type="submit" className="hidden" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="adjustment-fuel" label="Fuel type" required><Select id="adjustment-fuel" value={adjustment.fuelId} options={activeFuels.map((fuel) => ({ value: String(fuel.id), label: `${fuel.fuelType} · ${formatLitres(fuel.quantityLitres)}` }))} onChange={(event) => setAdjustment((value) => ({ ...value, fuelId: event.target.value }))} /></Field>
-            <Field id="adjustment-quantity" label="Signed quantity" required hint="Negative removes stock; positive adds stock"><Input id="adjustment-quantity" type="number" step="0.001" value={adjustment.quantityLitres} onChange={(event) => setAdjustment((value) => ({ ...value, quantityLitres: event.target.value }))} placeholder="e.g. -5.250" /></Field>
-            <Field id="adjustment-cost" label="Cost per litre" hint="Required for positive additions without a cost basis"><KshInput id="adjustment-cost" value={adjustment.unitCostKsh} onChange={(event) => setAdjustment((value) => ({ ...value, unitCostKsh: event.target.value }))} /></Field>
-            <Field id="adjustment-reason" label="Reason" required className="sm:col-span-2"><Input id="adjustment-reason" value={adjustment.reason} onChange={(event) => setAdjustment((value) => ({ ...value, reason: event.target.value }))} maxLength={500} placeholder="e.g. Meter calibration variance" /></Field>
-            <Field id="adjustment-notes" label="Notes" className="sm:col-span-2"><Textarea id="adjustment-notes" value={adjustment.notes} onChange={(event) => setAdjustment((value) => ({ ...value, notes: event.target.value }))} maxLength={1000} /></Field>
+            <Field id="adjustment-fuel" label="Fuel type" required><Select ref={adjustmentFuelRef} id="adjustment-fuel" value={adjustment.fuelId} options={activeFuels.map((fuel) => ({ value: String(fuel.id), label: `${fuel.fuelType} · ${formatLitres(fuel.quantityLitres)}` }))} onChange={(event) => setAdjustment((value) => ({ ...value, fuelId: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, adjustmentQuantityRef)} enterKeyHint="next" /></Field>
+            <Field id="adjustment-quantity" label="Signed quantity" required hint="Negative removes stock; positive adds stock"><Input ref={adjustmentQuantityRef} id="adjustment-quantity" type="text" inputMode="decimal" pattern="[+-]?[0-9]*[.]?[0-9]*" selectOnFocus value={adjustment.quantityLitres} onChange={(event) => setAdjustment((value) => ({ ...value, quantityLitres: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, adjustmentCostRef)} enterKeyHint="next" placeholder="e.g. -5.250" /></Field>
+            <Field id="adjustment-cost" label="Cost per litre" hint="Required for positive additions without a cost basis"><KshInput ref={adjustmentCostRef} id="adjustment-cost" value={adjustment.unitCostKsh} onChange={(event) => setAdjustment((value) => ({ ...value, unitCostKsh: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, adjustmentReasonRef)} enterKeyHint="next" /></Field>
+            <Field id="adjustment-reason" label="Reason" required className="sm:col-span-2"><Input ref={adjustmentReasonRef} id="adjustment-reason" value={adjustment.reason} onChange={(event) => setAdjustment((value) => ({ ...value, reason: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, adjustmentNotesRef)} enterKeyHint="next" maxLength={500} placeholder="e.g. Meter calibration variance" /></Field>
+            <Field id="adjustment-notes" label="Notes" className="sm:col-span-2"><Textarea ref={adjustmentNotesRef} id="adjustment-notes" value={adjustment.notes} onChange={(event) => setAdjustment((value) => ({ ...value, notes: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" maxLength={1000} /></Field>
           </div>{formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
         </form>
       </Modal>

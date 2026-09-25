@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Edit3, EyeOff, Gauge, Plus, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -11,7 +11,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/context/SettingsContext';
 import { buildQuery } from '@/lib/api';
 import { addDays, formatDateKey, formatKsh, formatLitres, formatNumber, todayKey, toDateKey } from '@/lib/format';
-import { useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { stationApi, type ReadingDraft } from '@/lib/stationApi';
 import { firstError, isoDate, nonNegativeNumber } from '@/lib/validation';
 import type { Reading } from '@/types/api';
@@ -51,6 +51,14 @@ export default function ReadingsPage({ kind, title, description }: ReadingKindPr
   const [form, setForm] = useState<ReadingForm>(emptyForm());
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, submit] = useSubmitGuard();
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+  const fuelRef = useRef<HTMLSelectElement>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
+  const openingRef = useRef<HTMLInputElement>(null);
+  const previousRef = useRef<HTMLInputElement>(null);
+  const closingRef = useRef<HTMLInputElement>(null);
+  const referenceRef = useRef<HTMLInputElement>(null);
+  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   const filters = { from: from || undefined, to: to || undefined, fuelId: fuelFilter || undefined, page, pageSize };
   const readings = useQuery({
@@ -83,11 +91,18 @@ export default function ReadingsPage({ kind, title, description }: ReadingKindPr
     setFormOpen(true);
   };
 
+  useEffect(() => {
+    if (!formOpen) return;
+    const timer = window.setTimeout(() => focusField(editing ? openingRef : fuelRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [editing?.id, formOpen]);
+
   const save = useMutation({
     mutationFn: ({ id, draft }: { id: number | null; draft: ReadingDraft }) => stationApi.readings.save(kind, id, draft),
     onSuccess: () => {
       setFormOpen(false);
       toast.success(editing ? 'Meter reading updated.' : `${kind === 'pump' ? 'Pump' : 'Sales'} meter reading recorded.`);
+      window.setTimeout(() => focusField(addButtonRef), 0);
       void queryClient.invalidateQueries({ queryKey: ['readings', kind] });
       void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       void queryClient.invalidateQueries({ queryKey: ['fuel'] });
@@ -149,7 +164,7 @@ export default function ReadingsPage({ kind, title, description }: ReadingKindPr
 
   return (
     <div className="animate-fade-in">
-      <PageHeader title={title} description={description} actions={<Button onClick={openCreate} disabled={!hasFuel} leftIcon={<Plus className="h-4 w-4" />}>Add reading</Button>} />
+      <PageHeader title={title} description={description} actions={<Button ref={addButtonRef} onClick={openCreate} disabled={!hasFuel} leftIcon={<Plus className="h-4 w-4" />}>Add reading</Button>} />
       {!hasFuel ? <SectionCard><EmptyState title="Petrol or Diesel configuration required" message="An active supported fuel type is required before meter readings can be recorded." /></SectionCard> : <>
         <SectionCard title="Reading filters" description="Narrow the connected station record by date or fuel." className="mb-6">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -172,13 +187,13 @@ export default function ReadingsPage({ kind, title, description }: ReadingKindPr
         <form id="reading-form" onSubmit={onSubmit} noValidate className="space-y-4">
           <button id="reading-form-submit" type="submit" className="hidden" aria-hidden="true" />
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field id="reading-form-fuel" label="Fuel type" required><Select id="reading-form-fuel" value={form.fuelId} placeholder="Choose fuel" options={activeFuels.map((fuel) => ({ value: String(fuel.id), label: fuel.fuelType }))} onChange={(event) => setForm((value) => ({ ...value, fuelId: event.target.value }))} /></Field>
-            <Field id="reading-form-date" label="Reading date" required hint="Historical dates are supported"><Input id="reading-form-date" type="date" value={form.readingDate} max={todayKey()} onChange={(event) => setForm((value) => ({ ...value, readingDate: event.target.value }))} /></Field>
-            <Field id="reading-opening" label={kind === 'pump' ? 'Opening reading (L)' : 'Opening reading (KSh)'} required><Input id="reading-opening" type="number" min="0" step={kind === 'pump' ? '0.001' : '0.01'} inputMode="decimal" value={form.opening} onChange={(event) => setForm((value) => ({ ...value, opening: event.target.value }))} placeholder={kind === 'pump' ? '0.000' : '0.00'} /></Field>
-            <Field id="reading-previous" label={kind === 'pump' ? 'Previous-day closing (L)' : 'Previous-day closing (KSh)'} required><Input id="reading-previous" type="number" min="0" step={kind === 'pump' ? '0.001' : '0.01'} inputMode="decimal" value={form.previousClosing} onChange={(event) => setForm((value) => ({ ...value, previousClosing: event.target.value }))} placeholder={kind === 'pump' ? '0.000' : '0.00'} /></Field>
-            <Field id="reading-closing" label={kind === 'pump' ? 'Closing reading (L)' : 'Closing reading (KSh)'} required><Input id="reading-closing" type="number" min="0" step={kind === 'pump' ? '0.001' : '0.01'} inputMode="decimal" value={form.closingReading} onChange={(event) => setForm((value) => ({ ...value, closingReading: event.target.value }))} /></Field>
-            <Field id="reading-reference" label="Meter reference" hint="Optional"><Input id="reading-reference" value={form.meterReference} onChange={(event) => setForm((value) => ({ ...value, meterReference: event.target.value }))} maxLength={100} placeholder={kind === 'pump' ? 'e.g. PUMP-A' : 'e.g. SALES-A'} /></Field>
-            <Field id="reading-notes" label="Notes" className="sm:col-span-2"><Textarea id="reading-notes" value={form.notes} onChange={(event) => setForm((value) => ({ ...value, notes: event.target.value }))} maxLength={1000} /></Field>
+            <Field id="reading-form-fuel" label="Fuel type" required><Select ref={fuelRef} id="reading-form-fuel" value={form.fuelId} placeholder="Choose fuel" options={activeFuels.map((fuel) => ({ value: String(fuel.id), label: fuel.fuelType }))} onChange={(event) => setForm((value) => ({ ...value, fuelId: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, dateRef)} enterKeyHint="next" /></Field>
+            <Field id="reading-form-date" label="Reading date" required hint="Historical dates are supported"><Input ref={dateRef} id="reading-form-date" type="date" value={form.readingDate} max={todayKey()} onChange={(event) => setForm((value) => ({ ...value, readingDate: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, openingRef)} enterKeyHint="next" /></Field>
+            <Field id="reading-opening" label={kind === 'pump' ? 'Opening reading (L)' : 'Opening reading (KSh)'} required><Input ref={openingRef} id="reading-opening" type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" selectOnFocus enterKeyHint="next" value={form.opening} onChange={(event) => setForm((value) => ({ ...value, opening: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, previousRef)} placeholder={kind === 'pump' ? '0.000' : '0.00'} /></Field>
+            <Field id="reading-previous" label={kind === 'pump' ? 'Previous-day closing (L)' : 'Previous-day closing (KSh)'} required><Input ref={previousRef} id="reading-previous" type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" selectOnFocus enterKeyHint="next" value={form.previousClosing} onChange={(event) => setForm((value) => ({ ...value, previousClosing: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, closingRef)} placeholder={kind === 'pump' ? '0.000' : '0.00'} /></Field>
+            <Field id="reading-closing" label={kind === 'pump' ? 'Closing reading (L)' : 'Closing reading (KSh)'} required><Input ref={closingRef} id="reading-closing" type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" selectOnFocus enterKeyHint="next" value={form.closingReading} onChange={(event) => setForm((value) => ({ ...value, closingReading: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, referenceRef)} /></Field>
+            <Field id="reading-reference" label="Meter reference" hint="Optional"><Input ref={referenceRef} id="reading-reference" value={form.meterReference} onChange={(event) => setForm((value) => ({ ...value, meterReference: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, notesRef)} enterKeyHint="next" maxLength={100} placeholder={kind === 'pump' ? 'e.g. PUMP-A' : 'e.g. SALES-A'} /></Field>
+            <Field id="reading-notes" label="Notes" className="sm:col-span-2"><Textarea ref={notesRef} id="reading-notes" value={form.notes} onChange={(event) => setForm((value) => ({ ...value, notes: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" maxLength={1000} /></Field>
           </div>
           <InlineAlert title={kind === 'pump' ? 'Inventory impact' : 'Independent sales reconciliation'} tone="info" icon={kind === 'pump' ? Gauge : EyeOff}>{kind === 'pump' ? 'Positive consumption reduces tank inventory transactionally. The server rejects insufficient stock or capacity.' : 'This reading reconciles the sales meter but does not reduce tank stock a second time.'}</InlineAlert>
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}

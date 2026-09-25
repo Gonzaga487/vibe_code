@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Edit3, Fuel as FuelIcon, Gauge, PackagePlus, Plus, Save, Scale } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -9,7 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { EmptyState, ErrorState, InlineAlert, PageLoader } from '@/components/ui/Feedback';
 import { request } from '@/lib/api';
 import { formatKsh, formatLitres } from '@/lib/format';
-import { useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { stationApi } from '@/lib/stationApi';
 import { firstError, nonNegativeNumber, positiveNumber, requiredText } from '@/lib/validation';
 import type { Fuel as StationFuel, FuelType, Pump, Settings } from '@/types/api';
@@ -33,6 +33,15 @@ export default function FuelManagementPage() {
   const [pumpForm, setPumpForm] = useState<PumpForm>({ fuelId: '', pumpCode: '' });
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, submit] = useSubmitGuard();
+  const fuelTypeRef = useRef<HTMLSelectElement>(null);
+  const fuelPriceRef = useRef<HTMLInputElement>(null);
+  const fuelCapacityRef = useRef<HTMLInputElement>(null);
+  const adjustmentStockRef = useRef<HTMLInputElement>(null);
+  const adjustmentCostRef = useRef<HTMLInputElement>(null);
+  const adjustmentReasonRef = useRef<HTMLInputElement>(null);
+  const adjustmentNotesRef = useRef<HTMLTextAreaElement>(null);
+  const pumpFuelRef = useRef<HTMLSelectElement>(null);
+  const pumpCodeRef = useRef<HTMLInputElement>(null);
 
   const fuels = useQuery({ queryKey: ['fuel'], queryFn: () => stationApi.fuels.list(), staleTime: 20_000 });
   const pumps = useQuery({ queryKey: ['pumps'], queryFn: () => stationApi.pumps.list(), staleTime: 20_000 });
@@ -46,6 +55,24 @@ export default function FuelManagementPage() {
     queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
     queryClient.invalidateQueries({ queryKey: ['settings', 'admin'] }),
   ]);
+  useEffect(() => {
+    if (!fuelOpen) return;
+    const timer = window.setTimeout(() => focusField(editing ? fuelPriceRef : fuelTypeRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [editing?.id, fuelOpen]);
+
+  useEffect(() => {
+    if (!adjustmentFuel) return;
+    const timer = window.setTimeout(() => focusField(adjustmentStockRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [adjustmentFuel?.id]);
+
+  useEffect(() => {
+    if (!pumpOpen) return;
+    const timer = window.setTimeout(() => focusField(pumpFuelRef, true), 80);
+    return () => window.clearTimeout(timer);
+  }, [pumpOpen]);
+
   const saveFuel = useMutation({
     mutationFn: (body: Record<string, unknown>) => request<FuelResponse>(editing ? `/fuel/${editing.id}` : '/fuel', { method: editing ? 'PATCH' : 'POST', body }),
     onSuccess: () => { setFuelOpen(false); toast.success(editing ? 'Fuel configuration updated.' : 'Fuel configured.'); void refresh(); },
@@ -139,8 +166,8 @@ export default function FuelManagementPage() {
 
       <Modal open={fuelOpen} onClose={() => !submitting && setFuelOpen(false)} title={editing ? `Edit ${editing.fuelType.toLowerCase()}` : 'Configure fuel'} description={editing ? 'Selling price, capacity, and active status can be updated.' : 'Create a fuel type with its current selling price.'} footer={<><Button variant="secondary" disabled={submitting} onClick={() => setFuelOpen(false)}>Cancel</Button><Button disabled={submitting} loading={submitting} onClick={() => document.getElementById('fuel-form-submit')?.click()} leftIcon={<Save className="h-4 w-4" />}>{editing ? 'Save changes' : 'Create fuel'}</Button></>}>
         <form id="fuel-form" onSubmit={onFuelSubmit} noValidate className="space-y-4"><button id="fuel-form-submit" type="submit" className="hidden" />
-          <Field id="fuel-type" label="Fuel type" required><Select id="fuel-type" value={form.fuelType} disabled={Boolean(editing)} options={allFuelTypes.filter((type) => editing ? type === editing.fuelType : !list.some((fuel) => fuel.fuelType === type)).map((type) => ({ value: type, label: type }))} onChange={(event) => setForm((value) => ({ ...value, fuelType: event.target.value as FuelType }))} /></Field>
-          <div className="grid gap-4 sm:grid-cols-2"><Field id="fuel-price" label="Selling price per litre" required><KshInput id="fuel-price" value={form.sellingPriceKsh} onChange={(event) => setForm((value) => ({ ...value, sellingPriceKsh: event.target.value }))} /></Field><Field id="fuel-capacity" label="Tank capacity" hint="Leave blank for no server limit"><Input id="fuel-capacity" type="number" min="0.001" step="0.001" value={form.tankCapacityLitres} onChange={(event) => setForm((value) => ({ ...value, tankCapacityLitres: event.target.value }))} /></Field></div>
+          <Field id="fuel-type" label="Fuel type" required><Select ref={fuelTypeRef} id="fuel-type" value={form.fuelType} disabled={Boolean(editing)} options={allFuelTypes.filter((type) => editing ? type === editing.fuelType : !list.some((fuel) => fuel.fuelType === type)).map((type) => ({ value: type, label: type }))} onChange={(event) => setForm((value) => ({ ...value, fuelType: event.target.value as FuelType }))} onKeyDown={(event) => handleEnterToNext(event, fuelPriceRef)} enterKeyHint="next" /></Field>
+          <div className="grid gap-4 sm:grid-cols-2"><Field id="fuel-price" label="Selling price per litre" required><KshInput ref={fuelPriceRef} id="fuel-price" value={form.sellingPriceKsh} onChange={(event) => setForm((value) => ({ ...value, sellingPriceKsh: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, fuelCapacityRef)} enterKeyHint="next" /></Field><Field id="fuel-capacity" label="Tank capacity" hint="Leave blank for no server limit"><Input ref={fuelCapacityRef} id="fuel-capacity" type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" selectOnFocus value={form.tankCapacityLitres} onChange={(event) => setForm((value) => ({ ...value, tankCapacityLitres: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" /></Field></div>
           {editing && <label className="flex items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-700"><input type="checkbox" checked={form.isActive} onChange={(event) => setForm((value) => ({ ...value, isActive: event.target.checked }))} className="h-4 w-4 rounded border-slate-300 text-brand-700 focus:ring-brand-600" /><span><span className="block text-sm font-bold">Fuel is active</span><span className="text-xs text-slate-500">Inactive fuel cannot be selected for new transactions.</span></span></label>}
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
         </form>
@@ -148,8 +175,8 @@ export default function FuelManagementPage() {
 
       <Modal open={pumpOpen} onClose={() => !submitting && setPumpOpen(false)} title="Configure pump" description="Pump codes are unique and can be selected in detailed sales." footer={<><Button variant="secondary" disabled={submitting} onClick={() => setPumpOpen(false)}>Cancel</Button><Button disabled={submitting} loading={submitting} onClick={() => document.getElementById('pump-form-submit')?.click()}>Save pump</Button></>}>
         <form id="pump-form" onSubmit={onPumpSubmit} noValidate className="space-y-4"><button id="pump-form-submit" type="submit" className="hidden" />
-          <Field id="pump-fuel" label="Fuel type" required><Select id="pump-fuel" value={pumpForm.fuelId} options={list.filter((fuel) => fuel.isActive).map((fuel) => ({ value: String(fuel.id), label: fuel.fuelType }))} onChange={(event) => setPumpForm((value) => ({ ...value, fuelId: event.target.value }))} /></Field>
-          <Field id="pump-code" label="Pump code" required hint="Letters, numbers, dots, dashes, and underscores"><Input id="pump-code" value={pumpForm.pumpCode} onChange={(event) => setPumpForm((value) => ({ ...value, pumpCode: event.target.value }))} maxLength={50} placeholder="PUMP-A" /></Field>
+          <Field id="pump-fuel" label="Fuel type" required><Select ref={pumpFuelRef} id="pump-fuel" value={pumpForm.fuelId} options={list.filter((fuel) => fuel.isActive).map((fuel) => ({ value: String(fuel.id), label: fuel.fuelType }))} onChange={(event) => setPumpForm((value) => ({ ...value, fuelId: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, pumpCodeRef)} enterKeyHint="next" /></Field>
+          <Field id="pump-code" label="Pump code" required hint="Letters, numbers, dots, dashes, and underscores"><Input ref={pumpCodeRef} id="pump-code" value={pumpForm.pumpCode} onChange={(event) => setPumpForm((value) => ({ ...value, pumpCode: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" maxLength={50} placeholder="PUMP-A" /></Field>
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
         </form>
       </Modal>
@@ -157,9 +184,9 @@ export default function FuelManagementPage() {
       <Modal open={Boolean(adjustmentFuel)} onClose={() => !submitting && setAdjustmentFuel(null)} title={`Adjust ${adjustmentFuel?.fuelType.toLowerCase() || 'fuel'} stock`} description="Current stock and weighted average cost are server managed." footer={<><Button variant="secondary" disabled={submitting} onClick={() => setAdjustmentFuel(null)}>Cancel</Button><Button variant="warning" disabled={submitting} loading={submitting} onClick={() => document.getElementById('fuel-adjust-submit')?.click()} leftIcon={<PackagePlus className="h-4 w-4" />}>Record adjustment</Button></>}>
         <form id="fuel-adjustment-form" onSubmit={onAdjustmentSubmit} noValidate className="space-y-4"><button id="fuel-adjust-submit" type="submit" className="hidden" />
           <InlineAlert tone="warning" title="Permanent physical count">Server stock before adjustment: {formatLitres(adjustmentFuel?.quantityLitres)}. Enter the verified tank quantity; the old and new values are recorded automatically.</InlineAlert>
-          <div className="grid gap-4 sm:grid-cols-2"><Field id="adjust-stock-quantity" label="Verified new stock (L)" required><Input id="adjust-stock-quantity" type="number" min="0" step="0.001" value={adjustment.newStockLitres} onChange={(event) => setAdjustment((value) => ({ ...value, newStockLitres: event.target.value }))} /></Field><Field id="adjust-stock-cost" label="Cost per litre" hint={adjustmentFuel?.weightedAverageCostKsh === 0 ? 'Required when the count increases stock' : 'Optional'}><KshInput id="adjust-stock-cost" value={adjustment.unitCostKsh} onChange={(event) => setAdjustment((value) => ({ ...value, unitCostKsh: event.target.value }))} /></Field></div>
-          <Field id="adjust-stock-reason" label="Reason" required><Input id="adjust-stock-reason" value={adjustment.reason} onChange={(event) => setAdjustment((value) => ({ ...value, reason: event.target.value }))} maxLength={500} placeholder="Describe the verified reason" /></Field>
-          <Field id="adjust-stock-notes" label="Notes"><Textarea id="adjust-stock-notes" value={adjustment.notes} onChange={(event) => setAdjustment((value) => ({ ...value, notes: event.target.value }))} maxLength={1000} /></Field>
+          <div className="grid gap-4 sm:grid-cols-2"><Field id="adjust-stock-quantity" label="Verified new stock (L)" required><Input ref={adjustmentStockRef} id="adjust-stock-quantity" type="number" min="0" step="0.001" inputMode="decimal" selectOnFocus value={adjustment.newStockLitres} onChange={(event) => setAdjustment((value) => ({ ...value, newStockLitres: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, adjustmentCostRef)} enterKeyHint="next" /></Field><Field id="adjust-stock-cost" label="Cost per litre" hint={adjustmentFuel?.weightedAverageCostKsh === 0 ? 'Required when the count increases stock' : 'Optional'}><KshInput ref={adjustmentCostRef} id="adjust-stock-cost" value={adjustment.unitCostKsh} onChange={(event) => setAdjustment((value) => ({ ...value, unitCostKsh: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, adjustmentReasonRef)} enterKeyHint="next" /></Field></div>
+          <Field id="adjust-stock-reason" label="Reason" required><Input ref={adjustmentReasonRef} id="adjust-stock-reason" value={adjustment.reason} onChange={(event) => setAdjustment((value) => ({ ...value, reason: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, adjustmentNotesRef)} enterKeyHint="next" maxLength={500} placeholder="Describe the verified reason" /></Field>
+          <Field id="adjust-stock-notes" label="Notes"><Textarea ref={adjustmentNotesRef} id="adjust-stock-notes" value={adjustment.notes} onChange={(event) => setAdjustment((value) => ({ ...value, notes: event.target.value }))} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" maxLength={1000} /></Field>
           {formError && <InlineAlert tone="danger">{formError}</InlineAlert>}
         </form>
       </Modal>

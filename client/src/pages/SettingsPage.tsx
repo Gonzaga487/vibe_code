@@ -10,7 +10,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/context/SettingsContext';
 import { request } from '@/lib/api';
 import { formatKsh, formatNumber } from '@/lib/format';
-import { useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { firstError, nonNegativeNumber, passwordError, requiredText } from '@/lib/validation';
 import type { DateFormat, PlatformMetrics, Settings, Theme } from '@/types/api';
 
@@ -48,6 +48,9 @@ export default function SettingsPage() {
   const [passwordSubmitting, submitPassword] = useSubmitGuard();
   const [stationSubmitting, submitStation] = useSubmitGuard();
   const [interfaceSaving, setInterfaceSaving] = useState(false);
+  const currentPasswordRef = useRef<HTMLInputElement>(null);
+  const newPasswordRef = useRef<HTMLInputElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (applied.current || !settingsQuery.data) return;
@@ -56,6 +59,12 @@ export default function SettingsPage() {
     setStationForm({ stationName: server.stationName, timezone: server.timezone, dateFormat: server.dateFormat, language: server.language, lowStockThresholdLitres: String(server.lowStockThresholdLitres ?? 0), auditRetentionDays: String(server.auditRetentionDays ?? 365) });
     applied.current = true;
   }, [applyServerSettings, settingsQuery.data]);
+
+  useEffect(() => {
+    if (!user?.mustChangePassword) return;
+    const timer = window.setTimeout(() => focusField(currentPasswordRef, true), 100);
+    return () => window.clearTimeout(timer);
+  }, [user?.mustChangePassword]);
 
   const changePassword = (event: FormEvent) => {
     event.preventDefault();
@@ -111,8 +120,8 @@ export default function SettingsPage() {
           </SectionCard>
           <SectionCard title="Change current password" description="The server returns a replacement token after a successful change.">
             <form onSubmit={changePassword} noValidate className="space-y-4">
-              <Field id="current-password" label="Current password" required><Input id="current-password" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" maxLength={128} invalid={Boolean(passwordErrorText)} /></Field>
-              <div className="grid gap-4 sm:grid-cols-2"><Field id="new-password" label="New password" required hint="12+ characters, upper/lower case, number, symbol"><Input id="new-password" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" maxLength={128} /></Field><Field id="confirm-password" label="Confirm new password" required><Input id="confirm-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" maxLength={128} /></Field></div>
+              <Field id="current-password" label="Current password" required><Input ref={currentPasswordRef} id="current-password" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, newPasswordRef)} enterKeyHint="next" autoComplete="current-password" maxLength={128} invalid={Boolean(passwordErrorText)} /></Field>
+              <div className="grid gap-4 sm:grid-cols-2"><Field id="new-password" label="New password" required hint="12+ characters, upper/lower case, number, symbol"><Input ref={newPasswordRef} id="new-password" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, confirmPasswordRef)} enterKeyHint="next" autoComplete="new-password" maxLength={128} /></Field><Field id="confirm-password" label="Confirm new password" required><Input ref={confirmPasswordRef} id="confirm-password" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, undefined, () => event.currentTarget.form?.requestSubmit())} enterKeyHint="done" autoComplete="new-password" maxLength={128} /></Field></div>
               {passwordErrorText && <InlineAlert tone="danger">{passwordErrorText}</InlineAlert>}
               <Button type="submit" loading={passwordSubmitting} leftIcon={<KeyRound className="h-4 w-4" />}>Change password</Button>
             </form>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { getErrorMessage } from '@/lib/api';
 
 export function useDocumentTitle(title: string): void {
@@ -62,6 +62,43 @@ export function useSubmitGuard(): [boolean, (action: () => Promise<void>) => Pro
   }, []);
 
   return [submitting, run];
+}
+
+export type FocusTarget = HTMLElement | RefObject<HTMLElement | null> | null | undefined;
+
+function resolveFocusTarget(target: FocusTarget): HTMLElement | null {
+  if (!target) return null;
+  if ('current' in target) return target.current;
+  return target;
+}
+
+export function focusField(target: FocusTarget, selectContents = false): void {
+  const element = resolveFocusTarget(target);
+  if (!element) return;
+  element.focus({ preventScroll: true });
+  if (selectContents && 'select' in element) (element as HTMLInputElement).select();
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches) {
+    window.requestAnimationFrame(() => {
+      if (document.activeElement === element) {
+        element.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+      }
+    });
+  }
+}
+
+export function handleEnterToNext(
+  event: KeyboardEvent<HTMLElement>,
+  next?: FocusTarget,
+  onDone?: () => void,
+): void {
+  if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+  event.preventDefault();
+  const target = resolveFocusTarget(next);
+  if (target) {
+    focusField(target, true);
+    return;
+  }
+  onDone?.();
 }
 
 export function errorText(error: unknown): string {

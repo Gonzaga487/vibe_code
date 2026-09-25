@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Banknote, CheckCircle2, ChevronDown, ChevronUp, Fuel, Info, LockKeyhole, Plus, Smartphone, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -12,7 +12,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useSettings } from '@/context/SettingsContext';
 import { buildQuery, request } from '@/lib/api';
 import { fuelLabel, formatDateTime, formatKsh, formatLitres, formatNumber, formatTime } from '@/lib/format';
-import { useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
+import { focusField, handleEnterToNext, useDocumentTitle, useSubmitGuard } from '@/lib/hooks';
 import { API_CONTRACT_VERSION, stationApi, type SaleDraft } from '@/lib/stationApi';
 import { firstError, nonNegativeNumber, positiveNumber } from '@/lib/validation';
 import type { Sale, Shift } from '@/types/api';
@@ -47,6 +47,11 @@ export default function SalesPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [submitting, submit] = useSubmitGuard();
+  const cashInputRef = useRef<HTMLInputElement>(null);
+  const mpesaInputRef = useRef<HTMLInputElement>(null);
+  const customerInputRef = useRef<HTMLInputElement>(null);
+  const pumpSelectRef = useRef<HTMLSelectElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const openShift = useQuery({ queryKey: ['shift', 'open'], queryFn: () => request<ShiftResponse>('/shifts/open'), staleTime: 10_000 });
   const fuels = useQuery({ queryKey: ['fuel'], queryFn: () => stationApi.fuels.list(), staleTime: 60_000 });
@@ -74,6 +79,19 @@ export default function SalesPage() {
     placeholderData: (previous) => previous,
   });
 
+  const returnFocusToCash = () => {
+    window.setTimeout(() => {
+      const active = document.activeElement;
+      if (!formRef.current || active === document.body || formRef.current.contains(active)) focusField(cashInputRef, true);
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (!shift?.id) return;
+    const timer = window.setTimeout(() => focusField(cashInputRef, true), 120);
+    return () => window.clearTimeout(timer);
+  }, [shift?.id]);
+
   const createSale = useMutation({
     mutationFn: (draft: SaleDraft) => stationApi.sales.create(draft),
     onSuccess: (sale) => {
@@ -81,6 +99,7 @@ export default function SalesPage() {
       setCashAmount(''); setMpesaAmount(''); setCustomerName(''); setPumpId(''); setNotes(''); setUnitPriceOverride(''); setSoldAt('');
       setPage(1);
       toast.success(`Sale #${sale.id} recorded: ${formatKsh(sale.totalKsh)}.`);
+      returnFocusToCash();
       void Promise.all([
         queryClient.invalidateQueries({ queryKey: ['sales'] }),
         queryClient.invalidateQueries({ queryKey: ['shift', 'open'] }),
@@ -128,11 +147,17 @@ export default function SalesPage() {
     isAdmin && unitPriceOverride ? positiveNumber(unitPriceOverride, 'Price override') : null,
   );
 
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault();
+  const submitSale = () => {
+    if (submitting) return;
     setFormError(null);
     const error = validate();
-    if (error) { setFormError(error); return; }
+    if (error) {
+      setFormError(error);
+      if (cashAmount && nonNegativeNumber(cashAmount, 'Cash amount')) focusField(cashInputRef, true);
+      else if (mpesaAmount && nonNegativeNumber(mpesaAmount, 'M-Pesa amount')) focusField(mpesaInputRef, true);
+      else if (enteredTotalKsh <= 0) focusField(cashInputRef, true);
+      return;
+    }
     const draft: SaleDraft = {
       mode: detailed ? 'detailed' : 'quick',
       ...(API_CONTRACT_VERSION === 'v1' || detailed ? { fuelId: chosenFuelId, unitPriceKsh: effectiveUnitPrice } : {}),
@@ -146,6 +171,15 @@ export default function SalesPage() {
       try { await createSale.mutateAsync(draft); }
       catch (error) { toast.error(error instanceof Error ? error.message : 'The sale could not be recorded.'); }
     });
+  };
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    submitSale();
+  };
+
+  const onQuickAmountKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    handleEnterToNext(event, undefined, submitSale);
   };
 
   const columns: Array<Column<Sale>> = [
@@ -168,16 +202,17 @@ export default function SalesPage() {
       </div>
 
       <div className="grid items-start gap-6 xl:grid-cols-[1.05fr_0.95fr]">
-        <SectionCard title="Cash and M-Pesa tally" description="Enter amounts directly in each block. A sale may use one block or both.">
-          <form onSubmit={onSubmit} noValidate className="space-y-5">
+        <SectionCard title="Cash and M-Pesa tally" description="Type an amount and press Enter to record it. Focus returns to Cash automatically; use Tab when adding M-Pesa to the same sale.">
+          <form ref={formRef} onSubmit={onSubmit} noValidate className="space-y-5">
+            <InlineAlert title="Rapid entry is active">Press Enter after a Cash or M-Pesa amount to submit. After every successful sale, Cash is selected and ready for the next figure.</InlineAlert>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-2xl border-2 border-emerald-200 bg-emerald-50/60 p-4 dark:border-emerald-900 dark:bg-emerald-950/30 sm:p-5">
                 <div className="flex items-center justify-between"><span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-600 text-white"><Banknote className="h-5 w-5" /></span><Badge tone="green">Cash</Badge></div>
-                <Field id="quick-cash" label="Cash received" className="mt-5"><KshInput id="quick-cash" value={cashAmount} onChange={(event) => setCashAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /></Field>
+                <Field id="quick-cash" label="Cash received" className="mt-5"><KshInput ref={cashInputRef} id="quick-cash" value={cashAmount} onChange={(event) => setCashAmount(event.target.value)} onKeyDown={onQuickAmountKeyDown} enterKeyHint="done" placeholder="0.00" inputMode="decimal" /></Field>
               </div>
               <div className="rounded-2xl border-2 border-blue-200 bg-blue-50/60 p-4 dark:border-blue-900 dark:bg-blue-950/30 sm:p-5">
                 <div className="flex items-center justify-between"><span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white"><Smartphone className="h-5 w-5" /></span><Badge tone="blue">M-Pesa</Badge></div>
-                <Field id="quick-mpesa" label="M-Pesa received" className="mt-5"><KshInput id="quick-mpesa" value={mpesaAmount} onChange={(event) => setMpesaAmount(event.target.value)} placeholder="0.00" inputMode="decimal" /></Field>
+                <Field id="quick-mpesa" label="M-Pesa received" className="mt-5"><KshInput ref={mpesaInputRef} id="quick-mpesa" value={mpesaAmount} onChange={(event) => setMpesaAmount(event.target.value)} onKeyDown={onQuickAmountKeyDown} enterKeyHint="done" placeholder="0.00" inputMode="decimal" /></Field>
               </div>
             </div>
 
@@ -193,8 +228,8 @@ export default function SalesPage() {
             {detailed && <div className="space-y-4 border-t border-slate-200 pt-5 dark:border-slate-800">
               <InlineAlert title="Detailed sale">Fuel and pump are required. The payment amount is still preserved exactly as entered.</InlineAlert>
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field id="sale-customer" label="Customer name" hint="Optional"><Input id="sale-customer" value={customerName} onChange={(event) => setCustomerName(event.target.value)} maxLength={120} /></Field>
-                <Field id="sale-pump" label="Pump" required hint={availablePumps.length ? undefined : 'No active pump is configured for this fuel'}><Select id="sale-pump" value={String(chosenPumpId)} disabled={!availablePumps.length} placeholder="Choose pump" options={availablePumps.map((pump) => ({ value: String(pump.id), label: pump.pumpCode }))} onChange={(event) => setPumpId(event.target.value)} /></Field>
+                <Field id="sale-customer" label="Customer name" hint="Optional"><Input ref={customerInputRef} id="sale-customer" value={customerName} onChange={(event) => setCustomerName(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, pumpSelectRef)} enterKeyHint="next" maxLength={120} /></Field>
+                <Field id="sale-pump" label="Pump" required hint={availablePumps.length ? undefined : 'No active pump is configured for this fuel'}><Select ref={pumpSelectRef} id="sale-pump" value={String(chosenPumpId)} disabled={!availablePumps.length} placeholder="Choose pump" options={availablePumps.map((pump) => ({ value: String(pump.id), label: pump.pumpCode }))} onChange={(event) => setPumpId(event.target.value)} onKeyDown={(event) => handleEnterToNext(event, undefined, submitSale)} enterKeyHint="done" /></Field>
                 {isAdmin && <Field id="sale-unit-price" label="Override price per litre" hint="Administrator only"><KshInput id="sale-unit-price" value={unitPriceOverride} onChange={(event) => setUnitPriceOverride(event.target.value)} placeholder={String(chosenFuel?.sellingPriceKsh || '')} /></Field>}
                 <Field id="sale-time" label="Sale date and time" hint="Optional; cannot predate the shift"><Input id="sale-time" type="datetime-local" value={soldAt} onChange={(event) => setSoldAt(event.target.value)} max={new Date().toISOString().slice(0, 16)} /></Field>
               </div>
