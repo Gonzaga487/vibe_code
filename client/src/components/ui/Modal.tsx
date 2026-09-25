@@ -20,6 +20,8 @@ export function Modal({ open, onClose, title, description, children, footer, siz
   const titleId = useId();
   const descriptionId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -27,13 +29,17 @@ export function Modal({ open, onClose, title, description, children, footer, siz
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const timer = window.setTimeout(() => {
-      panelRef.current?.querySelector<HTMLElement>('[data-autofocus], input, select, textarea, button')?.focus();
+      const panel = panelRef.current;
+      if (!panel) return;
+      const explicit = panel.querySelector<HTMLElement>('[data-autofocus]');
+      const bodyField = panel.querySelector<HTMLElement>('[data-modal-body] input:not([disabled]), [data-modal-body] select:not([disabled]), [data-modal-body] textarea:not([disabled]), [data-modal-body] button:not([disabled])');
+      (explicit ?? bodyField ?? panel.querySelector<HTMLElement>('button:not([disabled])'))?.focus();
     }, 0);
 
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab' || !panelRef.current) return;
@@ -57,7 +63,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
       window.clearTimeout(timer);
       previousActive?.focus();
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -79,7 +85,7 @@ export function Modal({ open, onClose, title, description, children, footer, siz
           </div>
           {closeOnOverlay && <Button variant="ghost" size="sm" className="-mr-2 -mt-1 px-2" onClick={onClose} aria-label="Close dialog"><X className="h-5 w-5" /></Button>}
         </div>
-        <div className="p-5">{children}</div>
+        <div className="p-5" data-modal-body>{children}</div>
         {footer && <div className="sticky bottom-0 flex flex-wrap justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-700 dark:bg-slate-950/70">{footer}</div>}
       </div>
     </div>,
